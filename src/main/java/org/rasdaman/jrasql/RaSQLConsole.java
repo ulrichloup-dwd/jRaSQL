@@ -143,6 +143,7 @@ public class RaSQLConsole { //extends KeyAdapter {
                 line = line.trim();
                 if (!line.isEmpty()) {
                     System.out.println("Sending query: " + line);
+                    rasql.history.remove(line);
                     rasql.history.add(line);
                     query(application, line);
                 }
