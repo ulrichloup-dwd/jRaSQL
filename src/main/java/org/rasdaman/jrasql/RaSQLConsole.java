@@ -6,30 +6,53 @@
 package org.rasdaman.jrasql;
 
 
-import rasj.*;
-import rasj.odmg.*;
-import org.odmg.*;
+import rasj.RasImplementation;
+import rasj.RasGMArray;
+import org.odmg.Database;
+import org.odmg.DBag;
+import org.odmg.Implementation;
+import org.odmg.Transaction;
+import org.odmg.OQLQuery;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 
-import java.util.*;
+//import java.awt.event.KeyAdapter;
+//import java.awt.event.KeyEvent;
+
+import java.util.Properties;
+import java.util.Iterator;
+import java.util.ArrayList;
 
 /**
  * A simple console application for sending Rasdaman Query Language queries. 
  * 
  * @author Ulrich Loup <ulrich.loup@dwd.de>
  */
-public class RaSQLConsole {
-    
-    public static String SERVER = "localhost";
-    public static String PORT = "7001";
-    public static String DATABASE = "RASBASE";
-    public static String USER = "rasquest";
-    public static String PASSWORD = "rasquest";
+public class RaSQLConsole { //extends KeyAdapter {
 
+    // constants
+    private static final String SERVER = "localhost";
+    private static final String PORT = "7001";
+    private static final String DATABASE = "RASBASE";
+    private static final String USER = "rasquest";
+    private static final String PASSWORD = "rasquest";
+
+    // attributes
+    protected ArrayList<String> history;
+    private int historyIndex;
+    
+    /**
+     * Constructs a RaSQLConsole object.
+     */
+    private RaSQLConsole() {
+        this.history = new ArrayList<String>();
+        this.historyIndex = -1;
+    }
+
+    
     public static void main(String[] args) {
         String server = SERVER;
         String port = PORT;
@@ -38,6 +61,12 @@ public class RaSQLConsole {
         String password = PASSWORD;
 
         System.out.println("Rasdaman Query Language (RaSQL) Console");
+        RaSQLConsole rasql = new RaSQLConsole(); // constructs singleton
+        Properties properties = new Properties();
+        try {
+            properties.load(rasql.getClass().getClassLoader().getResourceAsStream("project.properties"));
+            System.out.println("Version: " + properties.getProperty("version"));
+        } catch (IOException ioe) { }
         System.out.println();
         
         /*
@@ -76,13 +105,12 @@ public class RaSQLConsole {
         Database databaseConnection = null;
         Implementation application = null;
         try {
-            if (!server.startsWith("http://") && server.startsWith("https://")) server = "http://" + server;
+            if (!server.startsWith("http://") && !server.startsWith("https://")) server = "http://" + server;
             if (server.endsWith("/")) server = server.substring(0, server.length()-1);
+            System.out.println("Connecting to " + server + ":" + port + "...");
             application = new RasImplementation(server + ":" + port);
             ((RasImplementation)application).setUserIdentification(user, password);
             databaseConnection = application.newDatabase();
-
-            System.out.println("Opening database connection ...");
             databaseConnection.open(database, Database.OPEN_READ_ONLY);
 
         } catch (org.odmg.ODMGException e) {
@@ -100,15 +128,24 @@ public class RaSQLConsole {
             is = System.in;
             br = new BufferedReader(new InputStreamReader(is));
             String line = null;
-            System.out.println("Pose a RaSQL query and confirm with ENTER. Use quit or exit to leave.");
+            System.out.println("Pose a RaSQL query and confirm with ENTER. Use 'q', 'quit' or 'exit' to leave and 'h' or 'history' to show the last queries.");
             System.out.println();
             prompt();
             while ((line = br.readLine()) != null) {
                 if (line.equalsIgnoreCase("quit") || line.equalsIgnoreCase("exit") || line.equalsIgnoreCase("q")) {
                     break;
                 }
-                System.out.println("Sending query: " + line);
-                query(application, line);
+                if (line.equalsIgnoreCase("history") || line.equalsIgnoreCase("h")) {
+                        rasql.printHistory();
+                        prompt();
+                        continue;
+                }
+                line = line.trim();
+                if (!line.isEmpty()) {
+                    System.out.println("Sending query: " + line);
+                    rasql.history.add(line);
+                    query(application, line);
+                }
                 prompt();
             }
         }
@@ -153,14 +190,38 @@ public class RaSQLConsole {
         System.out.println("-password:  the user's password (default: rasguest)");
         System.out.println();
     }
+
+//    // Methods from KeyAdapter
+//    
+//    public void keyTyped(KeyEvent e) {
+//        if (this.history.isEmpty()) return;
+//        if (e.getKeyCode() == KeyEvent.VK_UP) this.historyIndex++;
+//        else if (e.getKeyCode() == KeyEvent.VK_DOWN) this.historyIndex--;
+//        this.historyIndex = this.historyIndex % this.history.size();
+//        System.out.print('\u000C'); // should clear the console
+//        prompt();
+//        System.out.print(this.history.get(this.historyIndex));
+//    }
+    
+    /**
+     * Prints the history of all queries.
+     */
+    protected void printHistory() {
+        Iterator iter = this.history.iterator();
+        while (iter.hasNext()) {
+            System.out.println(iter.next());
+        }
+    }
+    
+    // Static Methods
     
     /**
      * Prints the prompt.
      */
     private static void prompt() {
-        System.out.println("RaSQL> ");
+        System.out.print("RaSQL> ");
     }
-            
+    
     /**
      * Opens a transaction with the specified {@link application} and sends the specified {@link queryString}.
      * @param application
@@ -182,20 +243,27 @@ public class RaSQLConsole {
             query.create(queryString);
             resultBag = (DBag)query.execute();
             if (resultBag != null) {
-                Iterator iter = resultBag.iterator();
-                while (iter.hasNext()) {
-                    result = (RasGMArray)iter.next();
-                    System.out.println(result);
+                if( resultBag.size() == 1 )
+                    System.out.println("Query result: " + resultBag);
+                else {
+                    System.out.println("Query result count: " + resultBag.size());
+                    Iterator iter = resultBag.iterator();
+                    while (iter.hasNext()) {
+                        result = (RasGMArray)iter.next();
+                        // result.getTypeSchema()
+                        // System.out.println(result.getObjectTypeName());
+                        System.out.println(result);
+                    }
+                    System.out.println("All results");
                 }
-                System.out.println("All results");
             }
             transaction.commit();
             System.out.println("Transaction committed.");
         } catch (org.odmg.ODMGException e) {
             System.out.println("An exception has occurred: " + e.getMessage());
-            System.out.println("Try to abort the transaction ...");
             if (transaction != null) {
                 transaction.abort();
+                System.out.println("Transaction aborted.");
             }
         }
     }
